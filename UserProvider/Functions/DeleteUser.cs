@@ -5,42 +5,52 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace UserProvider.Functions
+public class DeleteUser(ILogger<DeleteUser> logger, DataContext context)
 {
-    public class DeleteUser(ILogger<DeleteUser> logger, DataContext context)
-    {
-        private readonly ILogger<DeleteUser> _logger = logger;
-        private readonly DataContext _context = context;
+    private readonly ILogger<DeleteUser> _logger = logger;
+    private readonly DataContext _context = context;
 
-        [Function("DeleteUser")]
-        public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
+    [Function("DeleteUser")]
+    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
+    {
+        try
         {
-            try
+            var userEmail = await req.ReadFromJsonAsync<UserEmailModel>();
+            var user = await _context.Users
+                .Include(u => u.UserProfile)
+                .Include(u => u.UserAddress)
+                .FirstOrDefaultAsync(u => u.Email == userEmail.Email);
+
+            if (user == null)
             {
-                var userEmail = await req.ReadFromJsonAsync<UserEmailModel>();
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == userEmail.Email);
-                if (user == null)
-                {
-                    return new NotFoundResult();
-                }
-                else
-                {
-                    _context.Users.Remove(user);
-                    await _context.SaveChangesAsync();
-                    return new OkResult();
-                }
+                return new NotFoundResult();
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(ex, "Error deleting user");
-                return new BadRequestResult();
+                if (user.UserProfile != null)
+                {
+                    _context.UserProfiles.Remove(user.UserProfile);
+                }
+
+                if (user.UserAddress != null)
+                {
+                    _context.UserAddresses.Remove(user.UserAddress);
+                }
+
+                _context.Users.Remove(user);
+                await _context.SaveChangesAsync();
+                return new OkResult();
             }
         }
-    }
-
-    public class UserEmailModel
-    {
-        public string Email { get; set; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting user");
+            return new BadRequestResult();
+        }
     }
 }
 
+public class UserEmailModel
+{
+    public string Email { get; set; }
+}
